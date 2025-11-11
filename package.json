@@ -23,8 +23,7 @@
     "cheerio": "^1.1.2",
     "dayjs": "^1.11.19",
     "express": "^5.1.0",
-    "morgan": "^1.10.1",
-    "node-cache": "^5.1.2"
+    "morgan": "^1.10.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"

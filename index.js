@@ -6,9 +6,6 @@ const https = require("https");
 const axios = require("axios");
 const cheerio = require("cheerio");
 
-const NodeCache = require("node-cache");
-const cache = new NodeCache({ stdTTL: 900 }); // Cache para almacenar las tasas por 15 minutos
-
 const URL_BCV = "https://www.bcv.org.ve/";
 
 const app = express();
@@ -26,10 +23,6 @@ app.use(express.json({ limit: "65mb" })); //Límite máximo en el tamaño de los
 const formatNumber = (number) => Number(number.replace(",", "."));
 
 const getBCVRates = async (req, res) => {
-  const cached = cache.get("tasas");
-
-  if (cached) return res.json(cached);
-
   try {
     const response = await axios.get(URL_BCV, {
       httpsAgent: new https.Agent({
@@ -54,8 +47,6 @@ const getBCVRates = async (req, res) => {
         rub: formatNumber(rub_currency),
         usd: formatNumber(usd_currency),
       };
-
-      cache.set("tasas", tasas);
 
       res.json(tasas);
     }
