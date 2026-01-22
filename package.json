@@ -22,7 +22,7 @@
     "axios": "^1.13.2",
     "cheerio": "^1.1.2",
     "dayjs": "^1.11.19",
-    "express": "^5.1.0",
+    "express": "^5.2.1",
     "morgan": "^1.10.1"
   },
   "devDependencies": {
