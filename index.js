@@ -4,8 +4,6 @@ const { rateLimit } = require("express-rate-limit");
 const router = require("./src/routes/index");
 const { fecha_hora_actual } = require("./src/utils/dayjs");
 
-const https = require("https");
-
 const app = express();
 
 app.disable("x-powered-by");
@@ -33,6 +31,6 @@ app.use(limiter);
 
 app.use(router);
 
-app.listen(port, () => {
-  console.log(`App listening on http://localhost:${port}`);
+app.listen(PORT_SERVER, () => {
+  console.log(`App listening on http://localhost:${PORT_SERVER}`);
 });
