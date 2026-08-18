@@ -4,6 +4,11 @@ const { rateLimit } = require("express-rate-limit");
 const router = require("./src/routes/index");
 const { fecha_hora_actual } = require("./src/utils/dayjs");
 
+const cron = require("node-cron");
+const {
+  actualizarTasasBCVAutomaticamente,
+} = require("./src/controllers/tasas_bcv_controllers");
+
 const app = express();
 
 app.disable("x-powered-by");
@@ -34,3 +39,14 @@ app.use(router);
 app.listen(PORT_SERVER, () => {
   console.log(`App listening on http://localhost:${PORT_SERVER}`);
 });
+
+cron.schedule(
+  "0 0,19 * * 1-5", // Se ejecuta de Lunes a Viernes, a las 12 AM y a las 7 PM
+  () => {
+    actualizarTasasBCVAutomaticamente();
+  },
+  {
+    scheduled: true,
+    timezone: "America/Caracas", // Forzar la zona horaria a hora local
+  },
+);

@@ -5,30 +5,11 @@ const https = require("https");
 const cheerio = require("cheerio");
 const URL_BCV = "https://www.bcv.org.ve/";
 
-const formatNumber = (number) => Number(number.replace(",", "."));
-
-// Función auxiliar para obtener YYYY-MM-DD en la zona horaria local
-const getFechaLocal = () => {
-  const d = new Date();
-  const offset = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - offset).toISOString().split("T")[0];
-};
-
-const esFechaValida = (fechaStr) => {
-  // 1. Verificar formato YYYY-MM-DD con Regex
-  const regexFecha = /^\d{4}-\d{2}-\d{2}$/;
-  if (!regexFecha.test(fechaStr)) return false;
-
-  // 2. Verificar que sea una fecha válida en el calendario
-  const [year, month, day] = fechaStr.split("-").map(Number);
-  const fecha = new Date(year, month - 1, day);
-
-  return (
-    fecha.getFullYear() === year &&
-    fecha.getMonth() === month - 1 &&
-    fecha.getDate() === day
-  );
-};
+const {
+  formatNumber,
+  getFechaLocal,
+  esFechaValida,
+} = require("../utils/tasas");
 
 const todasLasTasas = async (fecha) => {
   try {
@@ -69,6 +50,56 @@ const todasLasTasas = async (fecha) => {
     if (tasasBD) return tasasBD;
 
     // 3. Scraping fuera de la transacción de base de datos
+    const scrapingData = await scrapearTasasBCV();
+
+    // 4. Guardar en BD (findOrCreate maneja concurrencia)
+    const [tasas] = await Tasas_BCV.findOrCreate({
+      where: { fecha: hoy },
+      defaults: scrapingData,
+    });
+
+    const { id, createdAt, updatedAt, ...tasasLimpias } = tasas.toJSON();
+
+    return tasasLimpias;
+  } catch (error) {
+    throw new Error(`Error al traer las tasas BCV: ${error.message}`);
+  }
+};
+
+const actualizarTasasBCVAutomaticamente = async () => {
+  const hoy = getFechaLocal();
+
+  try {
+    console.log(`[CRON] Iniciando actualización de tasas BCV para: ${hoy}...`);
+
+    const scrapingData = await scrapearTasasBCV();
+
+    const resultado = await sequelize.transaction(async (t) => {
+      // Registra la tasa del día o la actualiza si ya existía
+      const [tasas, created] = await Tasas_BCV.findOrCreate({
+        where: { fecha: hoy },
+        defaults: scrapingData,
+        transaction: t,
+      });
+
+      if (!created) {
+        // Si ya existía el registro del día, actualizamos los valores por si cambiaron
+        await tasas.update(scrapingData, { transaction: t });
+        
+        console.log(`[CRON] Tasas actualizadas correctamente para ${hoy}`);
+      } else {
+        console.log(`[CRON] Nuevas tasas registradas exitosamente para ${hoy}`);
+      }
+    });
+  } catch (error) {
+    console.error(
+      `[CRON ERROR] Error al ejecutar actualización automática: ${error.message}`,
+    );
+  }
+};
+
+const scrapearTasasBCV = async () => {
+  try {
     const response = await axios.get(URL_BCV, {
       httpsAgent: new https.Agent({ rejectUnauthorized: false }),
       timeout: 10000, // 10 segundos de límite
@@ -89,26 +120,19 @@ const todasLasTasas = async (fecha) => {
       throw new Error("Estructura HTML no válida o valores no encontrados");
     }
 
-    // 4. Guardar en BD (findOrCreate maneja concurrencia)
-    const [tasas] = await Tasas_BCV.findOrCreate({
-      where: { fecha: hoy },
-      defaults: {
-        eur,
-        cny,
-        try: try_val,
-        rub,
-        usd,
-      },
-    });
-
-    const { id, createdAt, updatedAt, ...tasasLimpias } = tasas.toJSON();
-
-    return tasasLimpias;
+    return {
+      eur,
+      cny,
+      try: try_val,
+      rub,
+      usd,
+    };
   } catch (error) {
-    throw new Error(`Error al traer las tasas BCV: ${error.message}`);
+    throw new Error(`Error en scraping: ${error.message}`);
   }
 };
 
 module.exports = {
   todasLasTasas,
+  actualizarTasasBCVAutomaticamente,
 };
