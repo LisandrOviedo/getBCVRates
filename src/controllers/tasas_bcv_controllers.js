@@ -14,10 +14,32 @@ const getFechaLocal = () => {
   return new Date(d.getTime() - offset).toISOString().split("T")[0];
 };
 
+const esFechaValida = (fechaStr) => {
+  // 1. Verificar formato YYYY-MM-DD con Regex
+  const regexFecha = /^\d{4}-\d{2}-\d{2}$/;
+  if (!regexFecha.test(fechaStr)) return false;
+
+  // 2. Verificar que sea una fecha válida en el calendario
+  const [year, month, day] = fechaStr.split("-").map(Number);
+  const fecha = new Date(year, month - 1, day);
+
+  return (
+    fecha.getFullYear() === year &&
+    fecha.getMonth() === month - 1 &&
+    fecha.getDate() === day
+  );
+};
+
 const todasLasTasas = async (fecha) => {
   try {
     // 1. Si se solicita una fecha específica
     if (fecha) {
+      if (!esFechaValida(fecha)) {
+        throw new Error(
+          `Formato de fecha inválido: '${fecha}'. Debe ser una fecha válida en formato YYYY-MM-DD.`,
+        );
+      }
+
       const tasasBD = await Tasas_BCV.findOne({
         attributes: {
           exclude: ["id", "createdAt", "updatedAt"],
