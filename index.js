@@ -1,63 +1,37 @@
 const express = require("express");
 const morgan = require("morgan");
-const { fecha_hora_actual } = require("./dayjs");
+const { rateLimit } = require("express-rate-limit");
+const router = require("./src/routes/index");
+const { fecha_hora_actual } = require("./src/utils/dayjs");
 
 const https = require("https");
-const axios = require("axios");
-const cheerio = require("cheerio");
-
-const URL_BCV = "https://www.bcv.org.ve/";
 
 const app = express();
 
 app.disable("x-powered-by");
 
-const port = 4055;
+const { PORT_SERVER } = process.env;
+
+const limiter = rateLimit({
+  windowMs: 3 * 60 * 1000, // 3 minutos
+  limit: 50, // Limit each IP to 300 requests per `window` (here, per 15 minutes).
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  ipv6Subnet: 56, // Set to 60 or 64 to be less aggressive, or 52 or 48 to be more aggressive,
+  message: {
+    error: "Demasiadas solicitudes. Inténtalo de nuevo en 3 minutos.",
+  },
+});
 
 morgan.token("fecha_hora_actual", () => fecha_hora_actual());
 
 app.use(morgan(":fecha_hora_actual :method :url :status :response-time ms"));
 
-app.use(express.json({ limit: "65mb" })); //Límite máximo en el tamaño de los datos JSON que el servidor puede manejar de una sola vez, para evitar posibles ataques de denegación de servicio (DoS) o abusos.
+app.use(express.json({ limit: "5mb" })); //Límite máximo en el tamaño de los datos JSON que el servidor puede manejar de una sola vez, para evitar posibles ataques de denegación de servicio (DoS) o abusos.
 
-const formatNumber = (number) => Number(number.replace(",", "."));
+app.use(limiter);
 
-const getBCVRates = async (req, res) => {
-  try {
-    const response = await axios.get(URL_BCV, {
-      httpsAgent: new https.Agent({
-        rejectUnauthorized: false,
-      }),
-    });
-
-    if (response && response.data) {
-      const $ = cheerio.load(response.data);
-
-      const eur_currency = $("#euro strong").text();
-      const cny_currency = $("#yuan strong").text();
-      const try_currency = $("#lira strong").text();
-      const rub_currency = $("#rublo strong").text();
-      const usd_currency = $("#dolar strong").text();
-
-      const tasas = {
-        current_time_vzla: fecha_hora_actual(),
-        eur: formatNumber(eur_currency),
-        cny: formatNumber(cny_currency),
-        try: formatNumber(try_currency),
-        rub: formatNumber(rub_currency),
-        usd: formatNumber(usd_currency),
-      };
-
-      res.json(tasas);
-    }
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({ error: error.message });
-  }
-};
-
-app.get("/", getBCVRates);
+app.use(router);
 
 app.listen(port, () => {
   console.log(`App listening on http://localhost:${port}`);
