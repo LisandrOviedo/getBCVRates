@@ -2,7 +2,7 @@ const express = require("express");
 const morgan = require("morgan");
 const { rateLimit } = require("express-rate-limit");
 const router = require("./src/routes/index");
-const { fecha_hora_actual } = require("./src/utils/dayjs");
+const { fecha_actual_YYYYMMDD } = require("./src/utils/dayjs");
 
 const cron = require("node-cron");
 const {
@@ -26,9 +26,11 @@ const limiter = rateLimit({
   },
 });
 
-morgan.token("fecha_hora_actual", () => fecha_hora_actual());
+morgan.token("fecha_actual_YYYYMMDD", () => fecha_actual_YYYYMMDD());
 
-app.use(morgan(":fecha_hora_actual :method :url :status :response-time ms"));
+app.use(
+  morgan(":fecha_actual_YYYYMMDD :method :url :status :response-time ms"),
+);
 
 app.use(express.json({ limit: "5mb" })); //Límite máximo en el tamaño de los datos JSON que el servidor puede manejar de una sola vez, para evitar posibles ataques de denegación de servicio (DoS) o abusos.
 
