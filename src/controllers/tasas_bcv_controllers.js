@@ -3,13 +3,18 @@ const { sequelize, Tasas_BCV } = require("../models");
 const axios = require("axios");
 const https = require("https");
 const cheerio = require("cheerio");
+const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+const timezone = require("dayjs/plugin/timezone");
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
 const URL_BCV = "https://www.bcv.org.ve/";
 
-const {
-  formatNumber,
-  getFechaLocal,
-  esFechaValida,
-} = require("../utils/tasas");
+const { formatNumber, esFechaValida } = require("../utils/tasas");
+
+const { fecha_actual_YYYYMMDD } = require("../utils/dayjs");
 
 const todasLasTasas = async (fecha) => {
   try {
@@ -37,15 +42,21 @@ const todasLasTasas = async (fecha) => {
       return tasasBD;
     }
 
-    // 2. Si no se especificó fecha, usar la fecha de hoy (Local)
-    const hoy = getFechaLocal();
+    // 2. Si no se especificó fecha, usar la fecha de hoy en Venezuela
+    const hoy = fecha_actual_YYYYMMDD();
 
     let tasasBD = await Tasas_BCV.findOne({
-      attributes: {
-        exclude: ["id", "createdAt", "updatedAt"],
-      },
+      attributes: { exclude: ["id", "createdAt", "updatedAt"] },
       where: { fecha: hoy },
     });
+
+    // Fallback: si aún no existe la de hoy, trae la última disponible
+    if (!tasasBD) {
+      tasasBD = await Tasas_BCV.findOne({
+        attributes: { exclude: ["id", "createdAt", "updatedAt"] },
+        order: [["fecha", "DESC"]],
+      });
+    }
 
     if (tasasBD) return tasasBD;
 
@@ -54,7 +65,7 @@ const todasLasTasas = async (fecha) => {
 
     // 4. Guardar en BD (findOrCreate maneja concurrencia)
     const [tasas] = await Tasas_BCV.findOrCreate({
-      where: { fecha: hoy },
+      where: { fecha: scrapingData.fecha },
       defaults: scrapingData,
     });
 
@@ -67,17 +78,17 @@ const todasLasTasas = async (fecha) => {
 };
 
 const actualizarTasasBCVAutomaticamente = async () => {
-  const hoy = getFechaLocal();
+  const hoy = fecha_actual_YYYYMMDD();
 
   try {
-    console.log(`[CRON] Iniciando actualización de tasas BCV para: ${hoy}...`);
+    console.log(`[CRON | ${hoy}] Iniciando actualización de tasas BCV...`);
 
     const scrapingData = await scrapearTasasBCV();
 
     const resultado = await sequelize.transaction(async (t) => {
       // Registra la tasa del día o la actualiza si ya existía
       const [tasas, created] = await Tasas_BCV.findOrCreate({
-        where: { fecha: hoy },
+        where: { fecha: scrapingData.fecha },
         defaults: scrapingData,
         transaction: t,
       });
@@ -85,15 +96,15 @@ const actualizarTasasBCVAutomaticamente = async () => {
       if (!created) {
         // Si ya existía el registro del día, actualizamos los valores por si cambiaron
         await tasas.update(scrapingData, { transaction: t });
-        
-        console.log(`[CRON] Tasas actualizadas correctamente para ${hoy}`);
+
+        console.log(`[CRON | ${hoy}] Tasas actualizadas correctamente`);
       } else {
-        console.log(`[CRON] Nuevas tasas registradas exitosamente para ${hoy}`);
+        console.log(`[CRON | ${hoy}] Nuevas tasas registradas exitosamente`);
       }
     });
   } catch (error) {
     console.error(
-      `[CRON ERROR] Error al ejecutar actualización automática: ${error.message}`,
+      `[CRON | ${hoy}] Error al ejecutar actualización automática: ${error.message}`,
     );
   }
 };
@@ -110,17 +121,19 @@ const scrapearTasasBCV = async () => {
     }
 
     const $ = cheerio.load(response.data);
+    const fecha = $(".date-display-single").attr("content");
     const eur = formatNumber($("#euro strong").text());
     const cny = formatNumber($("#yuan strong").text());
     const try_val = formatNumber($("#lira strong").text());
     const rub = formatNumber($("#rublo strong").text());
     const usd = formatNumber($("#dolar strong").text());
 
-    if (isNaN(usd) || usd === 0) {
+    if (isNaN(usd) || usd === 0 || !fecha) {
       throw new Error("Estructura HTML no válida o valores no encontrados");
     }
 
     return {
+      fecha: dayjs.tz(fecha, "America/Caracas").format("YYYY-MM-DD"),
       eur,
       cny,
       try: try_val,

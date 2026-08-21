@@ -38,12 +38,14 @@ app.use(limiter);
 
 app.use(router);
 
-app.listen(PORT_SERVER, () => {
+app.listen(PORT_SERVER, async () => {
   console.log(`App listening on http://localhost:${PORT_SERVER}`);
+
+  await actualizarTasasBCVAutomaticamente();
 });
 
 cron.schedule(
-  "0 0,19 * * 1-5", // Se ejecuta de Lunes a Viernes, a las 12 AM y a las 7 PM
+  "0 0,5,8 * * 1-5", // Se ejecuta de Lunes a Viernes, 12AM-5AM-8AM
   () => {
     actualizarTasasBCVAutomaticamente();
   },
