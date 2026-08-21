@@ -1,4 +1,5 @@
 const { sequelize, Tasas_BCV } = require("../models");
+const { Op } = require("sequelize");
 
 const axios = require("axios");
 const https = require("https");
@@ -17,6 +18,8 @@ const { formatNumber, esFechaValida } = require("../utils/tasas");
 const { fecha_actual_YYYYMMDD } = require("../utils/dayjs");
 
 const todasLasTasas = async (fecha) => {
+  const hoy = fecha_actual_YYYYMMDD();
+
   try {
     // 1. Si se solicita una fecha específica
     if (fecha) {
@@ -25,6 +28,11 @@ const todasLasTasas = async (fecha) => {
           `Formato de fecha inválido: '${fecha}'. Debe ser una fecha válida en formato YYYY-MM-DD.`,
         );
       }
+
+      if (fecha > hoy)
+        throw new Error(
+          `La fecha '${fecha}' no puede ser posterior a la fecha actual (${hoy}).`,
+        );
 
       const tasasBD = await Tasas_BCV.findOne({
         attributes: {
@@ -35,7 +43,7 @@ const todasLasTasas = async (fecha) => {
 
       if (!tasasBD) {
         throw new Error(
-          `No hay tasas registradas en la BD para la fecha: ${fecha}`,
+          `No hay tasas registradas en la BD para la fecha: '${fecha}'`,
         );
       }
 
@@ -43,35 +51,18 @@ const todasLasTasas = async (fecha) => {
     }
 
     // 2. Si no se especificó fecha, usar la fecha de hoy en Venezuela
-    const hoy = fecha_actual_YYYYMMDD();
-
-    let tasasBD = await Tasas_BCV.findOne({
+    const tasasBD = await Tasas_BCV.findOne({
       attributes: { exclude: ["id", "createdAt", "updatedAt"] },
-      where: { fecha: hoy },
+      where: { fecha: { [Op.lte]: hoy } },
+      order: [["fecha", "DESC"]],
     });
 
-    // Fallback: si aún no existe la de hoy, trae la última disponible
-    if (!tasasBD) {
-      tasasBD = await Tasas_BCV.findOne({
-        attributes: { exclude: ["id", "createdAt", "updatedAt"] },
-        order: [["fecha", "DESC"]],
-      });
-    }
+    if (!tasasBD)
+      throw new Error(
+        `No hay tasas registradas para la fecha actual '${hoy}' o días anteriores.`,
+      );
 
-    if (tasasBD) return tasasBD;
-
-    // 3. Scraping fuera de la transacción de base de datos
-    const scrapingData = await scrapearTasasBCV();
-
-    // 4. Guardar en BD (findOrCreate maneja concurrencia)
-    const [tasas] = await Tasas_BCV.findOrCreate({
-      where: { fecha: scrapingData.fecha },
-      defaults: scrapingData,
-    });
-
-    const { id, createdAt, updatedAt, ...tasasLimpias } = tasas.toJSON();
-
-    return tasasLimpias;
+    return tasasBD;
   } catch (error) {
     throw new Error(`Error al traer las tasas BCV: ${error.message}`);
   }
